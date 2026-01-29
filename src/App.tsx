@@ -28,7 +28,7 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 export default function App() {
-  const [backendUrl, setBackendUrl] = useState("https://b0b79c5fd7cb.ngrok-free.app");
+  const [backendUrl, setBackendUrl] = useState("https://5b4fefcef23c.ngrok-free.app");
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
