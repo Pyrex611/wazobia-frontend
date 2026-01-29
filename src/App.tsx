@@ -23,7 +23,7 @@ const SUPPORTED_LANGUAGES = [
 
 const INITIAL_USERS: [User, User] = [
   { id: 'user1', name: 'Speaker A', language: 'eng_Latn' },
-  { id: 'user2', name: 'Speaker B', language: 'yor_Latn' },
+  { id: 'user2', name: 'Speaker B', language: 'fra_Latn' },
 ];
 
 const useRobustRecorder = () => {
