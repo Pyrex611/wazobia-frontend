@@ -100,7 +100,7 @@ const WazobiaApp: React.FC = () => {
         userId,
         textOriginal: data.original_transcript,
         textTranslated: data.transcript,
-        audioUrl: URL.createObjectURL(rec.audioBlob)
+        audioUrl: URL.createObjectURL(rec.audioBlob!)
       }]);
       rec.reset();
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
