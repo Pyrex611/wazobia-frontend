@@ -28,13 +28,13 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 export default function App() {
-  const [backendUrl, setBackendUrl] = useState("https://f2da7dcc1676.ngrok-free.app");
+  const [backendUrl, setBackendUrl] = useState("https://b0b79c5fd7cb.ngrok-free.app");
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [users, setUsers] = useState<[User, User]>([
     { id: 'user1', name: 'Speaker A', language: 'eng_Latn', isLoading: false },
-    { id: 'user2', name: 'Speaker B', language: 'yor_Latn', isLoading: false },
+    { id: 'user2', name: 'Speaker B', language: 'spa_Latn', isLoading: false },
   ]);
 
   const rec1 = useRecorder();
@@ -110,7 +110,7 @@ export default function App() {
       )}
 
       <header className="p-4 flex justify-between items-center border-b border-white/5 sticky top-0 bg-slate-950/80 backdrop-blur-md z-10">
-        <h1 className="text-xl font-bold italic">Wazobia<span className="text-green-500">Sync</span></h1>
+        <h1 className="text-xl font-bold italic">Wazobia</h1>
         <div className="flex items-center gap-4">
           {messages.length > 0 && (
             <button onClick={() => window.confirm("Clear all?") && setMessages([])} className="text-slate-500 hover:text-red-400">
