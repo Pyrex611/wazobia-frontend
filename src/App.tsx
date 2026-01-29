@@ -1,15 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { Mic, Volume2, Globe2, Loader2, Send, Activity, Settings, X, Save } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Mic, Globe2, Loader2, Send, Activity, Settings, X, Save, Trash2 } from 'lucide-react';
 
-// --- TYPES & CONFIG ---
-interface User { id: 'user1' | 'user2'; name: string; language: string; }
-interface Message { 
-  id: string; 
-  userId: 'user1' | 'user2'; 
-  textOriginal: string; 
-  textTranslated: string; 
-  audioUrl?: string; 
-}
+// --- TYPES & LANGUAGES ---
+interface User { id: 'user1' | 'user2'; name: string; language: string; isLoading: boolean; }
+interface Message { id: string; userId: 'user1' | 'user2'; textOriginal: string; textTranslated: string; }
 
 const SUPPORTED_LANGUAGES = [
   { code: 'eng_Latn', name: 'English', flag: '🇬🇧' },
@@ -18,18 +12,25 @@ const SUPPORTED_LANGUAGES = [
   { code: 'ibo_Latn', name: 'Igbo', flag: '🇳🇬' },
   { code: 'fra_Latn', name: 'French', flag: '🇫🇷' },
   { code: 'spa_Latn', name: 'Spanish', flag: '🇪🇸' },
-  { code: 'zho_Hans', name: 'Chinese', flag: '🇨🇳' },
-];
-
-const INITIAL_USERS: [User, User] = [
-  { id: 'user1', name: 'Speaker A', language: 'eng_Latn' },
-  { id: 'user2', name: 'Speaker B', language: 'fra_Latn' },
+  { code: 'deu_Latn', name: 'German', flag: '🇩🇪' },
+  { code: 'ita_Latn', name: 'Italian', flag: '🇮🇹' },
+  { code: 'por_Latn', name: 'Portuguese', flag: '🇧🇷' },
+  { code: 'rus_Cyrl', name: 'Russian', flag: '🇷🇺' },
+  { code: 'jpn_Jpan', name: 'Japanese', flag: '🇯🇵' },
+  { code: 'kor_Kore', name: 'Korean', flag: '🇰🇷' },
+  { code: 'arb_Arab', name: 'Arabic', flag: '🇸🇦' },
+  { code: 'hin_Deva', name: 'Hindi', flag: '🇮🇳' },
+  { code: 'tur_Latn', name: 'Turkish', flag: '🇹🇷' },
+  { code: 'vie_Latn', name: 'Vietnamese', flag: '🇻🇳' },
+  { code: 'nld_Latn', name: 'Dutch', flag: '🇳🇱' },
+  { code: 'pol_Latn', name: 'Polish', flag: '🇵🇱' },
+  { code: 'swe_Latn', name: 'Swedish', flag: '🇸🇪' },
+  { code: 'ind_Latn', name: 'Indonesian', flag: '🇮🇩' },
 ];
 
 const useRobustRecorder = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
 
@@ -37,15 +38,10 @@ const useRobustRecorder = () => {
     audioChunks.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      let mimeType = 'audio/webm';
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
-      
-      mediaRecorder.current = new MediaRecorder(stream, { mimeType });
-      mediaRecorder.current.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
+      mediaRecorder.current = new MediaRecorder(stream);
+      mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data);
       mediaRecorder.current.onstop = () => {
-        const blob = new Blob(audioChunks.current, { type: mimeType });
-        setAudioUrl(URL.createObjectURL(blob));
-        setAudioBlob(blob);
+        setAudioBlob(new Blob(audioChunks.current, { type: 'audio/webm' }));
         stream.getTracks().forEach(t => t.stop());
       };
       mediaRecorder.current.start();
@@ -54,147 +50,166 @@ const useRobustRecorder = () => {
   };
 
   const stopRecording = () => { mediaRecorder.current?.stop(); setIsRecording(false); };
-  const reset = () => { setAudioUrl(null); setAudioBlob(null); };
-
-  return { isRecording, audioBlob, audioUrl, startRecording, stopRecording, reset };
+  return { isRecording, audioBlob, startRecording, stopRecording, reset: () => setAudioBlob(null) };
 };
 
-const WazobiaApp: React.FC = () => {
-  const [backendUrl, setBackendUrl] = useState("https://f2da7dcc1676.ngrok-free.app"); 
+export default function App() {
+  const [backendUrl, setBackendUrl] = useState("https://f2da7dcc1676.ngrok-free.app");
   const [showSettings, setShowSettings] = useState(false);
-  const [users, setUsers] = useState<[User, User]>(INITIAL_USERS);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  
+  const [users, setUsers] = useState<[User, User]>([
+    { id: 'user1', name: 'Speaker A', language: 'eng_Latn', isLoading: false },
+    { id: 'user2', name: 'Speaker B', language: 'yor_Latn', isLoading: false },
+  ]);
+
   const rec1 = useRobustRecorder();
   const rec2 = useRobustRecorder();
 
-  const handleProcessAudio = async (userId: 'user1' | 'user2') => {
-    const rec = userId === 'user1' ? rec1 : rec2;
-    if (!rec.audioBlob) return;
-    setIsProcessing(true);
+  const clearChat = () => {
+    if (window.confirm("Are you sure you want to clear the conversation?")) {
+      setMessages([]);
+    }
+  };
+
+  const handleProcess = async (index: number) => {
+    const user = users[index];
+    const rec = index === 0 ? rec1 : rec2;
+
+    if (!rec.audioBlob || user.isLoading) return;
+
+    const newUsers = [...users] as [User, User];
+    newUsers[index].isLoading = true;
+    setUsers(newUsers);
 
     try {
-      const srcUser = users[userId === 'user1' ? 0 : 1];
-      const tgtUser = users[userId === 'user1' ? 1 : 0];
-
       const fd = new FormData();
-      fd.append('audio', rec.audioBlob, 'input.webm');
-      fd.append('src_lang', srcUser.language);
-      fd.append('tgt_lang', tgtUser.language);
+      fd.append('audio', rec.audioBlob);
+      fd.append('src_lang', user.language);
+      fd.append('tgt_lang', users[index === 0 ? 1 : 0].language);
 
       const res = await fetch(`${backendUrl.replace(/\/$/, "")}/process-speech`, { 
         method: 'POST', 
         body: fd,
         headers: { "ngrok-skip-browser-warning": "true" }
       });
+      
       const data = await res.json();
-
       if (data.audio_payload) {
-        const audio = new Audio(`data:audio/mp3;base64,${data.audio_payload}`);
-        audio.play().catch(console.error);
+        new Audio(`data:audio/mp3;base64,${data.audio_payload}`).play();
       }
 
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
-        userId,
+        userId: user.id,
         textOriginal: data.original_transcript,
         textTranslated: data.transcript,
-        audioUrl: URL.createObjectURL(rec.audioBlob!)
       }]);
       rec.reset();
-    } catch (e) { console.error(e); } finally { setIsProcessing(false); }
+    } catch (e) {
+      alert("Backend connection failed.");
+    } finally {
+      const resetUsers = [...users] as [User, User];
+      resetUsers[index].isLoading = false;
+      setUsers(resetUsers);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col font-sans">
       {showSettings && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-slate-900 border border-slate-700 p-6 rounded-2xl shadow-2xl w-full max-w-md">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-lg">Server Settings</h3>
-                    <button onClick={() => setShowSettings(false)}><X size={20}/></button>
-                </div>
-                <label className="text-xs text-slate-400 mb-2 block uppercase">Backend URL</label>
-                <input 
-                    type="text" 
-                    value={backendUrl}
-                    onChange={(e) => setBackendUrl(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 mb-6 outline-none focus:ring-1 focus:ring-green-500"
-                />
-                <button onClick={() => setShowSettings(false)} className="w-full bg-green-600 hover:bg-green-500 py-3 rounded-xl font-bold flex items-center justify-center gap-2">
-                    <Save size={18}/> Save Settings
-                </button>
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
+          <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-sm border border-slate-800 shadow-2xl">
+            <div className="flex justify-between mb-4 font-bold items-center">
+              <span>Server Config</span> 
+              <X className="cursor-pointer text-slate-500" onClick={()=>setShowSettings(false)}/>
             </div>
+            <input className="w-full bg-black border border-slate-700 p-3 rounded-xl mb-6 text-sm outline-none focus:border-green-500" value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} />
+            <button onClick={()=>setShowSettings(false)} className="w-full bg-green-600 p-3 rounded-xl font-bold hover:bg-green-500 transition-colors flex items-center justify-center gap-2">
+              <Save size={18}/> Save Settings
+            </button>
+          </div>
         </div>
       )}
 
-      <header className="border-b border-white/10 p-4 sticky top-0 bg-slate-950/50 backdrop-blur-md flex justify-between items-center z-10">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-green-500 rounded flex items-center justify-center text-black font-bold">W</div>
-          <h1 className="text-xl font-semibold">Wazobia</h1>
-        </div>
-        <div className="flex items-center gap-3">
-            {isProcessing && <Loader2 size={18} className="animate-spin text-green-500"/>}
-            <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-                <Settings size={20} className="text-slate-400" />
+      <header className="p-4 flex justify-between items-center border-b border-white/5 sticky top-0 bg-slate-950/80 backdrop-blur-md z-10">
+        <h1 className="text-xl font-bold italic tracking-tight">Wazobia<span className="text-green-500">Sync</span></h1>
+        <div className="flex items-center gap-4">
+          {messages.length > 0 && (
+            <button onClick={clearChat} className="p-2 text-slate-500 hover:text-red-400 transition-colors" title="Clear Chat">
+              <Trash2 size={20} />
             </button>
+          )}
+          <Settings className="text-slate-500 cursor-pointer hover:text-white transition-colors" onClick={()=>setShowSettings(true)}/>
         </div>
       </header>
 
-      <main className="flex-1 max-w-3xl mx-auto w-full p-4 overflow-y-auto space-y-6 pb-32">
+      <main className="flex-1 overflow-y-auto p-4 space-y-4 pb-40 max-w-2xl mx-auto w-full">
         {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full opacity-20 mt-20">
-                <Globe2 size={64} className="mb-4 text-green-500"/>
-                <p>Ready for live translation</p>
-            </div>
+          <div className="flex flex-col items-center justify-center h-64 opacity-20">
+            <Globe2 size={48} className="mb-2"/>
+            <p className="text-sm">Select languages and start talking</p>
+          </div>
         )}
         {messages.map(m => (
-            <div key={m.id} className={`flex ${m.userId === 'user1' ? 'justify-start' : 'justify-end'}`}>
-              <div className={`max-w-[85%] rounded-2xl p-4 border ${m.userId === 'user1' ? 'bg-slate-800/80 border-slate-700' : 'bg-green-900/30 border-green-800'}`}>
-                <p className="text-xs text-slate-400 mb-2 italic">"{m.textOriginal}"</p>
-                <p className="text-lg font-medium">{m.textTranslated}</p>
-                <button onClick={() => new Audio(m.audioUrl).play()} className="mt-3 flex items-center gap-1 text-[10px] uppercase opacity-60 hover:opacity-100">
-                  <Volume2 size={12}/> Play Original
-                </button>
-              </div>
+          <div key={m.id} className={`flex ${m.userId === 'user1' ? 'justify-start' : 'justify-end'}`}>
+            <div className={`p-4 rounded-2xl max-w-[85%] shadow-lg ${m.userId === 'user1' ? 'bg-slate-800 rounded-tl-none' : 'bg-green-900/20 border border-green-800/50 rounded-tr-none'}`}>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Source: {m.textOriginal}</p>
+              <p className="text-lg leading-snug font-medium">{m.textTranslated}</p>
             </div>
+          </div>
         ))}
       </main>
 
-      <footer className="fixed bottom-0 w-full bg-slate-950/80 backdrop-blur-xl border-t border-white/10">
-        <div className="max-w-3xl mx-auto p-4 grid grid-cols-2 gap-4">
+      <footer className="fixed bottom-0 left-0 w-full p-4 bg-slate-950/95 border-t border-white/5 backdrop-blur-lg">
+        <div className="max-w-2xl mx-auto grid grid-cols-2 gap-4">
           {[0, 1].map(i => {
-              const u = users[i];
-              const rec = i === 0 ? rec1 : rec2;
-              return (
-                <div key={u.id} className="flex flex-col gap-2">
-                    <select value={u.language} onChange={(e) => {
-                        const n = [...users] as [User, User];
-                        n[i].language = e.target.value;
-                        setUsers(n);
-                    }} className="bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 outline-none">
-                        {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
-                    </select>
-                    <div className="flex justify-center">
-                        {rec.audioUrl ? (
-                             <button onClick={() => handleProcessAudio(u.id)} className="w-full bg-green-600 h-14 rounded-xl font-bold flex items-center justify-center gap-2">
-                                <Send size={18}/> Send
-                            </button>
-                        ) : (
-                            <button onMouseDown={rec.startRecording} onMouseUp={rec.stopRecording} onTouchStart={rec.startRecording} onTouchEnd={rec.stopRecording}
-                                className={`h-14 w-14 rounded-full flex items-center justify-center transition-all ${rec.isRecording ? 'bg-red-500 scale-110 animate-pulse' : 'bg-slate-700'}`}>
-                                {rec.isRecording ? <Activity/> : <Mic/>}
-                            </button>
-                        )}
+            const rec = i === 0 ? rec1 : rec2;
+            const u = users[i];
+            return (
+              <div key={u.id} className="flex flex-col gap-3">
+                <select 
+                  className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-green-600" 
+                  value={u.language} 
+                  onChange={e => {
+                    const n = [...users] as [User, User];
+                    n[i].language = e.target.value;
+                    setUsers(n);
+                  }}
+                >
+                  {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
+                </select>
+                
+                <div className="flex justify-center">
+                  {u.isLoading ? (
+                    <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800">
+                      <Loader2 className="animate-spin text-green-500"/>
                     </div>
+                  ) : rec.audioBlob ? (
+                    <button 
+                      onClick={() => handleProcess(i)} 
+                      className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 active:scale-95 transition-all"
+                    >
+                      <Send size={18}/> Send
+                    </button>
+                  ) : (
+                    <button 
+                      onMouseDown={rec.startRecording} 
+                      onMouseUp={rec.stopRecording}
+                      onTouchStart={rec.startRecording}
+                      onTouchEnd={rec.stopRecording}
+                      className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
+                        rec.isRecording ? 'bg-red-500 scale-110 shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-slate-800 hover:bg-slate-700'
+                      }`}
+                    >
+                      {rec.isRecording ? <Activity className="animate-pulse"/> : <Mic size={24}/>}
+                    </button>
+                  )}
                 </div>
-              )
+              </div>
+            )
           })}
         </div>
       </footer>
     </div>
   );
-};
-
-export default WazobiaApp;
+}
