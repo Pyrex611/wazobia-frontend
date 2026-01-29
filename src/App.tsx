@@ -99,10 +99,10 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-white flex flex-col font-sans">
       {showSettings && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
-          <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-sm border border-slate-800 shadow-2xl text-center">
+          <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-sm border border-slate-800 shadow-2xl">
             <h2 className="font-bold mb-4">Server Config</h2>
             <input className="w-full bg-black border border-slate-700 p-3 rounded-xl mb-6 text-sm outline-none focus:border-green-500" value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} />
-            <button onClick={()=>setShowSettings(false)} className="w-full bg-green-600 p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-500">
+            <button onClick={()=>setShowSettings(false)} className="w-full bg-green-600 p-3 rounded-xl font-bold flex items-center justify-center gap-2">
               <Save size={18}/> Save Settings
             </button>
           </div>
@@ -157,7 +157,7 @@ export default function App() {
                   {u.isLoading ? (
                     <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800"><Loader2 className="animate-spin text-green-500"/></div>
                   ) : rec.audioBlob ? (
-                    <button onClick={() => handleProcess(i)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 active:scale-95 transition-all">
+                    <button onClick={() => handleProcess(i)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 transition-all">
                       <Send size={18}/> Send
                     </button>
                   ) : (
