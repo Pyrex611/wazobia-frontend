@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Mic, Globe2, Loader2, Send, Activity, Settings, Save, Trash2, Copy, Check } from 'lucide-react';
+import { Mic, Globe2, Loader2, Send, Activity, Settings, Save, Trash2, Copy, Check, X } from 'lucide-react';
 
 interface User { id: 'user1' | 'user2'; name: string; language: string; isLoading: boolean; }
 interface Message { id: string; userId: 'user1' | 'user2'; textOriginal: string; textTranslated: string; }
@@ -40,6 +40,9 @@ export default function App() {
   const rec1 = useRecorder();
   const rec2 = useRecorder();
 
+  // Helper to check if any recording/blob is active to show the X button
+  const hasActiveInput = rec1.isRecording || rec1.audioBlob || rec2.isRecording || rec2.audioBlob;
+
   function useRecorder() {
     const [isRecording, setIsRecording] = useState(false);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -47,17 +50,47 @@ export default function App() {
     const chunks = useRef<Blob[]>([]);
 
     const start = async () => {
-      chunks.current = [];
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder.current = new MediaRecorder(stream);
-      mediaRecorder.current.ondataavailable = (e) => chunks.current.push(e.data);
-      mediaRecorder.current.onstop = () => setAudioBlob(new Blob(chunks.current, { type: 'audio/webm' }));
-      mediaRecorder.current.start();
-      setIsRecording(true);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks.current = [];
+        mediaRecorder.current = new MediaRecorder(stream);
+        mediaRecorder.current.ondataavailable = (e) => chunks.current.push(e.data);
+        mediaRecorder.current.onstop = () => {
+          const blob = new Blob(chunks.current, { type: 'audio/webm' });
+          setAudioBlob(blob);
+          // Stop all tracks to release microphone
+          stream.getTracks().forEach(track => track.stop());
+        };
+        mediaRecorder.current.start();
+        setIsRecording(true);
+      } catch (err) {
+        alert("Microphone access denied or not available.");
+        console.error(err);
+      }
     };
-    const stop = () => { mediaRecorder.current?.stop(); setIsRecording(false); };
-    return { isRecording, audioBlob, start, stop, reset: () => setAudioBlob(null) };
+
+    const stop = () => {
+      if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
+        mediaRecorder.current.stop();
+      }
+      setIsRecording(false);
+    };
+
+    const toggle = () => (isRecording ? stop() : start());
+    
+    const reset = () => {
+      stop();
+      setAudioBlob(null);
+      chunks.current = [];
+    };
+
+    return { isRecording, audioBlob, toggle, reset };
   }
+
+  const handleDiscard = () => {
+    rec1.reset();
+    rec2.reset();
+  };
 
   const handleProcess = async (index: number) => {
     const user = users[index];
@@ -77,8 +110,13 @@ export default function App() {
       const res = await fetch(`${backendUrl.replace(/\/$/, "")}/process-speech`, { 
         method: 'POST', body: fd, headers: { "ngrok-skip-browser-warning": "true" } 
       });
+      
+      if (!res.ok) throw new Error("Backend error");
+      
       const data = await res.json();
-      if (data.audio_payload) new Audio(`data:audio/mp3;base64,${data.audio_payload}`).play();
+      if (data.audio_payload) {
+        new Audio(`data:audio/mp3;base64,${data.audio_payload}`).play().catch(e => console.log("Auto-play blocked", e));
+      }
 
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
@@ -87,8 +125,9 @@ export default function App() {
         textTranslated: data.transcript,
       }]);
       rec.reset();
-    } catch (e) { alert("Error reaching backend."); }
-    finally {
+    } catch (e) { 
+      alert("Error reaching backend. Check URL and connection."); 
+    } finally {
       const resetUsers = [...users] as [User, User];
       resetUsers[index].isLoading = false;
       setUsers(resetUsers);
@@ -121,7 +160,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 space-y-6 pb-44 max-w-2xl mx-auto w-full">
+      <main className="flex-1 overflow-y-auto p-4 space-y-6 pb-52 max-w-2xl mx-auto w-full">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 opacity-20">
             <Globe2 size={48} className="mb-2 text-green-500"/>
@@ -143,33 +182,70 @@ export default function App() {
       </main>
 
       <footer className="fixed bottom-0 left-0 w-full p-4 bg-slate-950/95 border-t border-white/5 backdrop-blur-lg">
-        <div className="max-w-2xl mx-auto grid grid-cols-2 gap-4">
-          {[0, 1].map(i => {
-            const rec = i === 0 ? rec1 : rec2;
-            const u = users[i];
-            return (
-              <div key={u.id} className="flex flex-col gap-3">
-                <select className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-green-600" value={u.language} 
-                  onChange={e => { const n = [...users] as [User, User]; n[i].language = e.target.value; setUsers(n); }}>
-                  {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
-                </select>
-                <div className="flex justify-center">
-                  {u.isLoading ? (
-                    <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800"><Loader2 className="animate-spin text-green-500"/></div>
-                  ) : rec.audioBlob ? (
-                    <button onClick={() => handleProcess(i)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 transition-all">
-                      <Send size={18}/> Send
-                    </button>
-                  ) : (
-                    <button onMouseDown={rec.start} onMouseUp={rec.stop} onTouchStart={rec.start} onTouchEnd={rec.stop}
-                      className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${rec.isRecording ? 'bg-red-500 scale-110 shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-slate-800 hover:bg-slate-700'}`}>
-                      {rec.isRecording ? <Activity className="animate-pulse"/> : <Mic size={24}/>}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+        <div className="max-w-2xl mx-auto flex items-end gap-3">
+          {/* User 1 Controls */}
+          <div className="flex-1 flex flex-col gap-3">
+            <select className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-green-600 w-full" 
+              value={users[0].language} 
+              onChange={e => { const n = [...users] as [User, User]; n[0].language = e.target.value; setUsers(n); }}>
+              {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
+            </select>
+            
+            <div className="h-16 flex items-center justify-center">
+              {users[0].isLoading ? (
+                 <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800"><Loader2 className="animate-spin text-green-500"/></div>
+              ) : rec1.audioBlob ? (
+                <button onClick={() => handleProcess(0)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 transition-all shadow-lg shadow-green-900/20">
+                  <Send size={18}/> Send
+                </button>
+              ) : (
+                <button onClick={rec1.toggle} disabled={rec2.isRecording}
+                  className={`relative w-14 h-14 rounded-full flex items-center justify-center transition-all ${
+                    rec1.isRecording ? 'bg-red-500 scale-110' : 'bg-slate-800 hover:bg-slate-700'
+                  } ${rec2.isRecording ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                  {rec1.isRecording && <span className="absolute inset-0 rounded-full animate-ping bg-red-500/50"></span>}
+                  {rec1.isRecording ? <Activity className="animate-pulse relative z-10"/> : <Mic size={24} className="relative z-10"/>}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Central Discard Button */}
+          <div className="h-16 flex items-center justify-center w-12 shrink-0 pb-1">
+             {hasActiveInput && (
+                <button onClick={handleDiscard} className="w-10 h-10 rounded-full bg-slate-800 text-slate-400 hover:text-red-400 hover:bg-slate-700 flex items-center justify-center transition-all">
+                  <X size={20} />
+                </button>
+             )}
+          </div>
+
+          {/* User 2 Controls */}
+          <div className="flex-1 flex flex-col gap-3">
+            <select className="bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-green-600 w-full" 
+              value={users[1].language} 
+              onChange={e => { const n = [...users] as [User, User]; n[1].language = e.target.value; setUsers(n); }}>
+              {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
+            </select>
+
+            <div className="h-16 flex items-center justify-center">
+              {users[1].isLoading ? (
+                 <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800"><Loader2 className="animate-spin text-green-500"/></div>
+              ) : rec2.audioBlob ? (
+                <button onClick={() => handleProcess(1)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 transition-all shadow-lg shadow-green-900/20">
+                  <Send size={18}/> Send
+                </button>
+              ) : (
+                <button onClick={rec2.toggle} disabled={rec1.isRecording}
+                  className={`relative w-14 h-14 rounded-full flex items-center justify-center transition-all ${
+                    rec2.isRecording ? 'bg-red-500 scale-110' : 'bg-slate-800 hover:bg-slate-700'
+                  } ${rec1.isRecording ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                   {rec2.isRecording && <span className="absolute inset-0 rounded-full animate-ping bg-red-500/50"></span>}
+                   {rec2.isRecording ? <Activity className="animate-pulse relative z-10"/> : <Mic size={24} className="relative z-10"/>}
+                </button>
+              )}
+            </div>
+          </div>
+
         </div>
       </footer>
     </div>
