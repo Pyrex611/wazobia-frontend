@@ -1,8 +1,10 @@
-Project is still under development
+Project is still under development(Remain the final optimization phases)
+You can consider this a PoC
+
 For now, go to https://www.kaggle.com/code/cliffordgambo/wazobia-server
 copy and run
 provide all required environment variables and click run all
-You can choose to use GPUs
+You can choose to use accelerators(GPUs) for more faster responses
 
 Runn all cells
 You will be provided with the url, copy it
