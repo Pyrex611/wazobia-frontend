@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+	"homepage": "https://pyrex611.github.io/midas-frontend",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

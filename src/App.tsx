@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Mic, Globe2, Loader2, Send, Activity, Settings, Save, Trash2, Copy, Check, X } from 'lucide-react';
 
 interface User { id: 'user1' | 'user2'; name: string; language: string; isLoading: boolean; }
@@ -27,8 +27,12 @@ const SUPPORTED_LANGUAGES = [
   { code: 'ind_Latn', name: 'Indonesian', flag: '🇮🇩' },
 ];
 
+// Replace with your bucket name
+const REGISTRY_URL = "https://storage.googleapis.com/wazobia-registry-midas/current-url.json";
+
 export default function App() {
-  const [backendUrl, setBackendUrl] = useState("https://f707caea8954.ngrok-free.app");
+  const [backendUrl, setBackendUrl] = useState("");
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -40,7 +44,6 @@ export default function App() {
   const rec1 = useRecorder();
   const rec2 = useRecorder();
 
-  // Helper to check if any recording/blob is active to show the X button
   const hasActiveInput = rec1.isRecording || rec1.audioBlob || rec2.isRecording || rec2.audioBlob;
 
   function useRecorder() {
@@ -58,7 +61,6 @@ export default function App() {
         mediaRecorder.current.onstop = () => {
           const blob = new Blob(chunks.current, { type: 'audio/webm' });
           setAudioBlob(blob);
-          // Stop all tracks to release microphone
           stream.getTracks().forEach(track => track.stop());
         };
         mediaRecorder.current.start();
@@ -87,12 +89,56 @@ export default function App() {
     return { isRecording, audioBlob, toggle, reset };
   }
 
+  // Fetch backend URL from registry and check health
+  const fetchBackendUrlAndCheckHealth = async () => {
+    try {
+      const registryRes = await fetch(REGISTRY_URL);
+      const registryData = await registryRes.json();
+      if (!registryData.backend_url) {
+        setBackendOnline(false);
+        return;
+      }
+      const currentBackendUrl = registryData.backend_url;
+
+      // Test health endpoint
+      try {
+        const healthRes = await fetch(`${currentBackendUrl}/health`, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+          signal: AbortSignal.timeout(3000)
+        });
+        if (healthRes.ok) {
+          setBackendUrl(currentBackendUrl);
+          setBackendOnline(true);
+        } else {
+          setBackendOnline(false);
+        }
+      } catch {
+        setBackendOnline(false);
+      }
+    } catch (error) {
+      console.error("Failed to fetch registry:", error);
+      setBackendOnline(false);
+    }
+  };
+
+  // Poll registry every 30 seconds
+  useEffect(() => {
+    fetchBackendUrlAndCheckHealth();
+    const interval = setInterval(fetchBackendUrlAndCheckHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleDiscard = () => {
     rec1.reset();
     rec2.reset();
   };
 
   const handleProcess = async (index: number) => {
+    if (!backendOnline) {
+      alert("Backend is offline. Please try again later.");
+      return;
+    }
+
     const user = users[index];
     const rec = index === 0 ? rec1 : rec2;
     if (!rec.audioBlob || user.isLoading) return;
@@ -126,7 +172,7 @@ export default function App() {
       }]);
       rec.reset();
     } catch (e) { 
-      alert("Error reaching backend. Check URL and connection."); 
+      alert("Error reaching backend. Check connection."); 
     } finally {
       const resetUsers = [...users] as [User, User];
       resetUsers[index].isLoading = false;
@@ -140,16 +186,34 @@ export default function App() {
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
           <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-sm border border-slate-800 shadow-2xl">
             <h2 className="font-bold mb-4">Server Config</h2>
-            <input className="w-full bg-black border border-slate-700 p-3 rounded-xl mb-6 text-sm outline-none focus:border-green-500" value={backendUrl} onChange={e=>setBackendUrl(e.target.value)} />
+            <p className="text-xs text-slate-400 mb-2">Current backend URL:</p>
+            <div className="bg-black border border-slate-700 p-3 rounded-xl mb-4 text-xs break-all">
+              {backendUrl || "Not available"}
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Status: {backendOnline === null ? "Checking..." : backendOnline ? "🟢 Online" : "🔴 Offline"}
+            </p>
             <button onClick={()=>setShowSettings(false)} className="w-full bg-green-600 p-3 rounded-xl font-bold flex items-center justify-center gap-2">
-              <Save size={18}/> Save Settings
+              <Save size={18}/> Close
             </button>
           </div>
         </div>
       )}
 
       <header className="p-4 flex justify-between items-center border-b border-white/5 sticky top-0 bg-slate-950/80 backdrop-blur-md z-10">
-        <h1 className="text-xl font-bold italic">Wazobia</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold italic">Wazobia</h1>
+          <div className="flex items-center gap-1 ml-2">
+            <div className={`w-2 h-2 rounded-full ${
+              backendOnline === null ? 'bg-gray-500 animate-pulse' : 
+              backendOnline ? 'bg-green-500' : 'bg-red-500'
+            }`} />
+            <span className="text-[10px] text-slate-400 hidden sm:inline">
+              {backendOnline === null ? 'Connecting...' : 
+               backendOnline ? 'Online' : 'Offline'}
+            </span>
+          </div>
+        </div>
         <div className="flex items-center gap-4">
           {messages.length > 0 && (
             <button onClick={() => window.confirm("Clear all?") && setMessages([])} className="text-slate-500 hover:text-red-400">
@@ -195,14 +259,15 @@ export default function App() {
               {users[0].isLoading ? (
                  <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800"><Loader2 className="animate-spin text-green-500"/></div>
               ) : rec1.audioBlob ? (
-                <button onClick={() => handleProcess(0)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 transition-all shadow-lg shadow-green-900/20">
+                <button onClick={() => handleProcess(0)} disabled={!backendOnline}
+                  className={`w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-900/20 ${!backendOnline ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-500'}`}>
                   <Send size={18}/> Send
                 </button>
               ) : (
-                <button onClick={rec1.toggle} disabled={rec2.isRecording}
+                <button onClick={rec1.toggle} disabled={rec2.isRecording || !backendOnline}
                   className={`relative w-14 h-14 rounded-full flex items-center justify-center transition-all ${
                     rec1.isRecording ? 'bg-red-500 scale-110' : 'bg-slate-800 hover:bg-slate-700'
-                  } ${rec2.isRecording ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                  } ${(rec2.isRecording || !backendOnline) ? 'opacity-30 cursor-not-allowed' : ''}`}>
                   {rec1.isRecording && <span className="absolute inset-0 rounded-full animate-ping bg-red-500/50"></span>}
                   {rec1.isRecording ? <Activity className="animate-pulse relative z-10"/> : <Mic size={24} className="relative z-10"/>}
                 </button>
@@ -231,14 +296,15 @@ export default function App() {
               {users[1].isLoading ? (
                  <div className="w-full h-14 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800"><Loader2 className="animate-spin text-green-500"/></div>
               ) : rec2.audioBlob ? (
-                <button onClick={() => handleProcess(1)} className="w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-500 transition-all shadow-lg shadow-green-900/20">
+                <button onClick={() => handleProcess(1)} disabled={!backendOnline}
+                  className={`w-full h-14 bg-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-900/20 ${!backendOnline ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-500'}`}>
                   <Send size={18}/> Send
                 </button>
               ) : (
-                <button onClick={rec2.toggle} disabled={rec1.isRecording}
+                <button onClick={rec2.toggle} disabled={rec1.isRecording || !backendOnline}
                   className={`relative w-14 h-14 rounded-full flex items-center justify-center transition-all ${
                     rec2.isRecording ? 'bg-red-500 scale-110' : 'bg-slate-800 hover:bg-slate-700'
-                  } ${rec1.isRecording ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                  } ${(rec1.isRecording || !backendOnline) ? 'opacity-30 cursor-not-allowed' : ''}`}>
                    {rec2.isRecording && <span className="absolute inset-0 rounded-full animate-ping bg-red-500/50"></span>}
                    {rec2.isRecording ? <Activity className="animate-pulse relative z-10"/> : <Mic size={24} className="relative z-10"/>}
                 </button>
